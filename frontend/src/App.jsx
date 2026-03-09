@@ -1,21 +1,23 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import Layout from "./components/layout/Layout";
+import Gestion from "./pages/Gestion";
+import Reporteria from "./pages/Reporteria";
+import Operaciones from "./pages/Operaciones";
+import Imagenes from "./pages/Imagenes";
 
-function App() {
-  const [mensaje, setMensaje] = useState("");
+export default function App() {
+  const [page, setPage] = useState("gestion");
 
-  useEffect(() => {
-    fetch("/api/saludo") // usa proxy
-      .then(res => res.json())
-      .then(data => setMensaje(data.mensaje))
-      .catch(err => console.error("Error:", err));
-  }, []);
+  const pages = {
+    gestion: <Gestion onNavigate={setPage}/>,
+    reporteria: <Reporteria />,
+    operaciones: <Operaciones />,
+    imagenes: <Imagenes />,
+  };
 
   return (
-    <div>
-      <h1>Frontend React</h1>
-      <p>{mensaje}</p>
-    </div>
+    <Layout currentPage={page} onNavigate={setPage}>
+      {pages[page]}
+    </Layout>
   );
 }
-
-export default App;
