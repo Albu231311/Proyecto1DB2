@@ -1,29 +1,43 @@
 const { getDb } = require('../db/connection');
 const { ObjectId } = require('mongodb');
 
-//LECTURA Y CONSULTA
-exports.getRestaurantes = async (req, res) => {
+// 1. BÚSQUEDA POR TEXTO
+exports.buscarRestaurantes = async (req, res) => {
     const db = getDb();
-    const { categoria, skip = 0, limit = 10 } = req.query;
-    
-    // Filtros 
-    const query = categoria ? { categorias: categoria } : {};
+    const { q } = req.query;
+    if (!q) return res.json([]);
 
     try {
-        const results = await db.collection('restaurantes')
-            .find(query)
-            .project({ nombre: 1, promedioCalificacion: 1, categorias: 1, imagen: 1 }) // Proyecciones 
-            .sort({ promedioCalificacion: -1 }) // Ordenamiento 
-            .skip(parseInt(skip)) // Skip 
-            .limit(parseInt(limit)) // Límite 
+        const resultados = await db.collection('restaurantes')
+            .find({ $text: { $search: q } }) 
+            .limit(10)
             .toArray();
-        res.json(results);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.json(resultados);
+    } catch (error) {
+        res.status(500).json({ error: "Error en el índice de Atlas: " + error.message });
     }
 };
 
-// Búsqueda Geoespacial
+// 2. LECTURA Y CONSULTA CON PAGINACIÓN
+exports.getRestaurantes = async (req, res) => {
+    const db = getDb();
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    try {
+        const [docs, totalItems] = await Promise.all([
+            db.collection('restaurantes').find().skip(skip).limit(limit).toArray(),
+            db.collection('restaurantes').countDocuments()
+        ]);
+        const totalPages = Math.ceil(totalItems / limit);
+        res.json({ docs, totalPages, currentPage: page, totalItems });
+    } catch (error) {
+        res.status(500).json({ error: "Error al paginar datos" });
+    }
+};
+
+// 3. BÚSQUEDA GEOESPACIAL
 exports.getRestaurantesCercanos = async (req, res) => {
     const db = getDb();
     const { lng, lat } = req.query;
@@ -41,7 +55,7 @@ exports.getRestaurantesCercanos = async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
-// AGREGACIONES COMPLEJAS 
+// 4. AGREGACIONES: MEJORES POR RESEÑAS
 exports.getMejoresRestaurantes = async (req, res) => {
     const db = getDb();
     const pipeline = [
@@ -49,133 +63,138 @@ exports.getMejoresRestaurantes = async (req, res) => {
         { $sort: { promedioCalificacion: -1 } },
         { $limit: 10 }
     ];
-    const top = await db.collection('restaurantes').aggregate(pipeline).toArray();
-    res.json(top);
-};
-
-// ACTUALIZACIÓN
-exports.updateRestaurante = async (req, res) => {
-    const db = getDb();
-    const { id } = req.params;
     try {
-        const result = await db.collection('restaurantes').updateOne( // Actualizar 1 
-            { _id: new ObjectId(id) },
-            { $set: req.body }
-        );
-        res.json(result);
+        const top = await db.collection('restaurantes').aggregate(pipeline).toArray();
+        res.json(top);
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
-//ELIMINACIÓN
-exports.deleteRestaurante = async (req, res) => {
-    const db = getDb();
-    try {
-        const result = await db.collection('restaurantes').deleteOne({ // Eliminar 1 
-            _id: new ObjectId(req.params.id) 
-        });
-        res.json(result);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-};
-
-//CREACIÓN
-exports.createRestaurante = async (req, res) => {
-    const db = getDb();
-    try {
-        
-        const data = Array.isArray(req.body) ? req.body : [req.body];
-        const result = await db.collection('restaurantes').insertMany(data);
-        res.status(201).json(result);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-};
-
-// --- ELIMINACIÓN MASIVA 
-exports.deleteMuchosRestaurantes = async (req, res) => {
-    const db = getDb();
-    const { categoria } = req.body; // Ejemplo: borrar todos los de una categoría cerrada
-    try {
-        const result = await db.collection('restaurantes').deleteMany({
-            categorias: categoria 
-        });
-        res.json(result);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-};
-
-
+// 5. OBTENER POR ID (Corregida la sintaxis)
 exports.getRestauranteById = async (req, res) => {
     const db = getDb();
     try {
         const restaurante = await db.collection('restaurantes').findOne({ 
             _id: new ObjectId(req.params.id) 
         });
-        
-        if (!restaurante) {
-            return res.status(404).json({ mensaje: "Restaurante no encontrado" });
-        }
-        
+        if (!restaurante) return res.status(404).json({ mensaje: "No encontrado" });
         res.json(restaurante);
+    } catch (e) { res.status(500).json({ error: "ID no válido" }); }
+};
+
+// 6. ACTUALIZACIÓN ($set)
+exports.updateRestaurante = async (req, res) => {
+    const db = getDb();
+    const { id } = req.params;
+    const rest = req.body;
+
+    try {
+        const updateDoc = {
+            $set: {
+                nombre: rest.nombre,
+                descripcion: rest.descripcion,
+                categorias: Array.isArray(rest.categorias) ? rest.categorias : [rest.categorias],
+               
+                direcciones: rest.direcciones.map(dir => ({
+                    calle: dir.calle,
+                    zona: dir.zona,
+                    ciudad: dir.ciudad,
+                    ubicacion: {
+                        type: "Point",
+                        coordinates: [ parseFloat(dir.lng), parseFloat(dir.lat) ]
+                    }
+                }))
+            }
+        };
+
+        const result = await db.collection('restaurantes').updateOne(
+            { _id: new ObjectId(id) },
+            updateDoc
+        );
+        res.json(result);
     } catch (e) {
-        res.status(500).json({ error: "ID no válido o error de servidor" });
+        res.status(500).json({ error: "Error al actualizar: " + e.message });
     }
 };
 
+// 7. ELIMINACIÓN
+exports.deleteRestaurante = async (req, res) => {
+    const db = getDb();
+    try {
+        const result = await db.collection('restaurantes').deleteOne({ 
+            _id: new ObjectId(req.params.id) 
+        });
+        res.json(result);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+};
 
-// Manejo de Arrays: Añadir una dirección extra ($push)
+// 8. CREACIÓN MASIVA
+exports.createRestaurante = async (req, res) => {
+    const db = getDb();
+    try {
+        const bodyData = Array.isArray(req.body) ? req.body : [req.body];
+        
+        const restaurantesAInsertar = bodyData.map(rest => ({
+            nombre: rest.nombre,
+            descripcion: rest.descripcion || "",
+            categorias: rest.categorias,
+            
+            direcciones: rest.direcciones.map(dir => ({
+                calle: dir.calle,
+                zona: dir.zona,
+                ciudad: dir.ciudad,
+                ubicacion: {
+                    type: "Point",
+                    coordinates: [ parseFloat(dir.lng), parseFloat(dir.lat) ] 
+                }
+            })),
+            promedioCalificacion: 0,
+            totalResenas: 0,
+            estado: "Active",
+            fecha_registro: new Date()
+        }));
+
+        const result = await db.collection('restaurantes').insertMany(restaurantesAInsertar);
+        res.status(201).json(result);
+    } catch (e) { 
+        res.status(500).json({ error: "Error de inserción GeoJSON: " + e.message }); 
+    }
+};
+
+// 9. ELIMINACIÓN MASIVA
+exports.deleteMuchosRestaurantes = async (req, res) => {
+    const db = getDb();
+    const { categoria } = req.body;
+    try {
+        const result = await db.collection('restaurantes').deleteMany({ categorias: categoria });
+        res.json(result);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+// 10. MANEJO DE ARRAYS ($push direcciones)
 exports.addDireccionRestaurante = async (req, res) => {
     const db = getDb();
     const { id } = req.params;
     try {
         const result = await db.collection('restaurantes').updateOne(
             { _id: new ObjectId(id) },
-            { 
-                $push: { 
-                    direcciones: {
-                        ...req.body,
-                        ubicacion: req.body.ubicacion || { type: "Point", coordinates: [0, 0] }
-                    } 
-                } 
-            }
+            { $push: { direcciones: { ...req.body, ubicacion: req.body.ubicacion || { type: "Point", coordinates: [0, 0] } } } }
         );
-        res.json({ msg: "Dirección añadida exitosamente", result });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+        res.json({ msg: "Dirección añadida", result });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
-//restaurantes mejores calificados
+// 11. REPORTE MEJOR CALIFICADOS (Agregación compleja con $lookup)
 exports.getMejorCalificados = async (req, res) => {
     const db = getDb();
     const pipeline = [
-        // 1. Unir con la colección de restaurantes para tener el nombre
-        {
-            $lookup: {
-                from: "restaurantes",
-                localField: "restauranteId",
-                foreignField: "_id",
-                as: "infoRest"
-            }
-        },
-        // 2. Descomponer el array de la unión
+        { $lookup: { from: "restaurantes", localField: "restauranteId", foreignField: "_id", as: "infoRest" } },
         { $unwind: "$infoRest" },
-        // 3. Agrupar por restaurante y calcular el promedio
-        {
-            $group: {
-                _id: "$infoRest.nombre",
-                promedioCalificacion: { $avg: "$calificacion" }, // Promedio (Agregación Compleja)
-                totalResenas: { $sum: 1 } // Conteo (Agregación Simple)
-            }
-        },
-        // 4. Ordenar: los más altos primero 
+        { $group: { _id: "$infoRest.nombre", promedioCalificacion: { $avg: "$calificacion" }, totalResenas: { $sum: 1 } } },
         { $sort: { promedioCalificacion: -1 } },
-        // 5. Limitar a los mejores 5
         { $limit: 5 }
     ];
-
     try {
         const reporte = await db.collection('resenas').aggregate(pipeline).toArray();
         res.json(reporte);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 };
