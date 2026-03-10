@@ -18,4 +18,6 @@ router.delete('/:id', menuCtrl.deleteArticulo);
 // PUT 
 router.put('/update-precios', menuCtrl.updatePreciosPorCategoria);
 
+
+
 module.exports = router;
