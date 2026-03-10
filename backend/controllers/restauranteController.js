@@ -41,18 +41,39 @@ exports.getRestaurantes = async (req, res) => {
 exports.getRestaurantesCercanos = async (req, res) => {
     const db = getDb();
     const { lng, lat } = req.query;
+
+    if (!lng || !lat) {
+        return res.status(400).json({ error: "Latitud y Longitud son requeridas" });
+    }
+
     try {
-        const pipeline = [{
-            $geoNear: {
-                near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
-                distanceField: "distancia",
-                maxDistance: 5000,
-                spherical: true
-            }
-        }];
+        const pipeline = [
+            {
+                $geoNear: {
+                    near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+                    distanceField: "distancia",
+                    maxDistance: 5000,
+                    spherical: true,
+                    key: "direcciones.ubicacion" 
+                }
+            },
+            
+            {
+                $project: {
+                    nombre: 1,
+                    distancia: 1,
+                    categorias: 1
+                }
+            },
+            { $limit: 15 }
+        ];
+
         const results = await db.collection('restaurantes').aggregate(pipeline).toArray();
         res.json(results);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        console.error(e);
+        res.status(500).json({ error: e.message }); 
+    }
 };
 
 // 4. AGREGACIONES: MEJORES POR RESEÑAS

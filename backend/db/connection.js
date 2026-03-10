@@ -8,9 +8,8 @@ let bucket;
 async function connectDB() {
   try {
     await client.connect();
-    db = client.db(); // Usa el nombre definido en la URI (restaurantDB)
+    db = client.db(); 
     
-    // Configuración de GridFS para el manejo de imágenes [cite: 41]
     bucket = new GridFSBucket(db, { bucketName: 'uploads' });
     
     console.log("Conexión exitosa a MongoDB Atlas");
