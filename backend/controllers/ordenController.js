@@ -120,12 +120,39 @@ exports.getClientesRecurrentes = async (req, res) => {
     const db = getDb();
     try {
         const reporte = await db.collection('ordenes').aggregate([
-            { $group: { _id: "$usuarioId", totalPedidos: { $sum: 1 }, monto: { $sum: "$total" } } },
-            { $lookup: { from: "usuarios", localField: "_id", foreignField: "_id", as: "u" } },
-            { $project: { nombreCliente: { $arrayElemAt: ["$u.nombre", 0] }, totalPedidos: 1, montoTotalGastado: 1 } },
+            
+            { 
+                $group: { 
+                    _id: "$usuarioId", 
+                    totalPedidos: { $sum: 1 }, 
+                    montoTotalGastado: { $sum: "$total" } 
+                } 
+            },
+            
+            { 
+                $lookup: { 
+                    from: "usuarios", 
+                    localField: "_id", 
+                    foreignField: "_id", 
+                    as: "u" 
+                } 
+            },
+            
+            { 
+                $project: { 
+                    nombreCliente: { $arrayElemAt: ["$u.nombre", 0] }, 
+                    totalPedidos: 1, 
+                    montoTotalGastado: 1 
+                } 
+            },
+            
             { $sort: { totalPedidos: -1 } },
+            // 5. Top 10
             { $limit: 10 }
         ]).toArray();
+        
         res.json(reporte);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        res.status(500).json({ error: "Error en reporte de lealtad: " + e.message }); 
+    }
 };
