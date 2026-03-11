@@ -94,15 +94,19 @@ exports.deleteUsuario = async (req, res) => {
 };
 
 //  Eliminar todos los usuarios que no han completado su perfil (rol 'invitado')
+// Eliminar todos los usuarios con rol 'invitado'
 exports.deleteInvitados = async (req, res) => {
     const db = getDb();
     try {
+        // Operación masiva deleteMany 
         const result = await db.collection('usuarios').deleteMany({ rol: "invitado" });
+        
         res.json({
             mensaje: "Eliminación masiva completada",
             cantidadEliminada: result.deletedCount
         });
     } catch (e) {
+        console.error("Error en deleteMany:", e);
         res.status(500).json({ error: e.message });
     }
 };
