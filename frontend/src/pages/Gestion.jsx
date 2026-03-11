@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Header from "../components/layout/Header";
 import { getOrdenes, crearOrden, updateOrden, deleteOrden } from "../api/ordenes";
+import { getUsuarios } from "../api/usuarios";
+import { getRestaurantes } from "../api/restaurantes";
 
 const TABS = [
   { id: "restaurants", icon: "restaurant", label: "Restaurants" },
@@ -210,15 +212,106 @@ function UpdatePreciosModal({ categorias, onClose, onConfirm }) {
 }
 
 // ─── Componente de tabla para órdenes (datos reales del backend) ──────────────
+
+// ─── Modal: Nueva Orden ───────────────────────────────────────────────────────
+function NewOrderModal({ onClose, onSave }) {
+  const [usuarios,     setUsuarios]     = useState([]);
+  const [restaurantes, setRestaurantes] = useState([]);
+  const [usuarioId,    setUsuarioId]    = useState("");
+  const [restauranteId,setRestauranteId]= useState("");
+  const [fechaPedido,  setFechaPedido]  = useState(() => new Date().toISOString().slice(0, 16));
+  const [loadingData,  setLoadingData]  = useState(true);
+  const [error,        setError]        = useState("");
+
+  useEffect(() => {
+    async function loadDropdowns() {
+      try {
+        const [u, r] = await Promise.all([getUsuarios(), getRestaurantes()]);
+        const uList = u?.data?.docs || u?.docs || [];
+        const rList = r?.data?.docs || r?.docs || [];
+        setUsuarios(uList);
+        setRestaurantes(rList);
+        if (uList.length) setUsuarioId(uList[0]._id);
+        if (rList.length) setRestauranteId(rList[0]._id);
+      } catch (e) {
+        setError("No se pudieron cargar los datos: " + e.message);
+      } finally {
+        setLoadingData(false);
+      }
+    }
+    loadDropdowns();
+  }, []);
+
+  function handleSave() {
+    if (!usuarioId || !restauranteId) { setError("Selecciona usuario y restaurante."); return; }
+    onSave({ usuarioId, restauranteId, fecha_pedido: new Date(fechaPedido), estado: "pendiente" });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Nueva Orden</h3>
+          <button className="modal-close" onClick={onClose}>
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div className="modal-body">
+          {loadingData ? (
+            <div style={{ textAlign: "center", padding: 24, color: "var(--slate-400)" }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 28, display: "block", marginBottom: 8 }}>hourglass_empty</span>
+              Cargando datos...
+            </div>
+          ) : (
+            <>
+              {error && <p style={{ fontSize: 12, color: "var(--red-500)", marginBottom: 12 }}>{error}</p>}
+              <div className="form-group">
+                <label className="form-label">Usuario</label>
+                <select className="form-input form-select" value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)}>
+                  {usuarios.map((u) => (
+                    <option key={u._id} value={u._id}>{u.nombre || u.name || u.email || u._id}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Restaurante</label>
+                <select className="form-input form-select" value={restauranteId} onChange={(e) => setRestauranteId(e.target.value)}>
+                  {restaurantes.map((r) => (
+                    <option key={r._id} value={r._id}>{r.nombre || r.name || r._id}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Fecha del pedido</label>
+                <input
+                  className="form-input"
+                  type="datetime-local"
+                  value={fechaPedido}
+                  onChange={(e) => setFechaPedido(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loadingData}>Crear orden</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrdersTable() {
-  const [orders,      setOrders]      = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState(null);
-  const [page,        setPage]        = useState(1);
-  const [totalPages,  setTotalPages]  = useState(1);
-  const [editItem,    setEditItem]    = useState(null);
-  const [deleteItem,  setDeleteItem]  = useState(null);
-  const [saving,      setSaving]      = useState(false);
+  const [orders,        setOrders]        = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState(null);
+  const [page,          setPage]          = useState(1);
+  const [totalPages,    setTotalPages]    = useState(1);
+  const [editItem,      setEditItem]      = useState(null);
+  const [deleteItem,    setDeleteItem]    = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [showNewOrder,  setShowNewOrder]  = useState(false);
 
   const fetchOrders = useCallback(async (p = 1) => {
     setLoading(true);
@@ -263,6 +356,19 @@ function OrdersTable() {
     }
   }
 
+  async function handleCreate(body) {
+    setSaving(true);
+    try {
+      await crearOrden(body);
+      await fetchOrders(1);
+      setShowNewOrder(false);
+    } catch (e) {
+      alert("Error al crear orden: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) return (
     <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--slate-400)" }}>
       <span className="material-symbols-outlined" style={{ fontSize: 32, marginBottom: 8, display: "block" }}>hourglass_empty</span>
@@ -281,6 +387,12 @@ function OrdersTable() {
 
   return (
     <>
+      <div style={{ marginBottom: 16 }}>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowNewOrder(true)}>
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+          Nueva Orden
+        </button>
+      </div>
       <div className="card" style={{ overflow: "hidden" }}>
         <div className="table-wrap">
           <table>
@@ -360,6 +472,12 @@ function OrdersTable() {
           item={deleteItem}
           onClose={() => setDeleteItem(null)}
           onConfirm={handleDelete}
+        />
+      )}
+      {showNewOrder && (
+        <NewOrderModal
+          onClose={() => setShowNewOrder(false)}
+          onSave={handleCreate}
         />
       )}
     </>
