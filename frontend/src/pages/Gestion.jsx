@@ -14,7 +14,7 @@ const TABS = [
 const STATUS_BADGE = {
   Online: "badge-green", Active: "badge-green", Available: "badge-green", entregado: "badge-green", confirmado: "badge-green",
   Offline: "badge-slate", Inactive: "badge-slate", Unavailable: "badge-slate",
-  Busy: "badge-amber", Pending: "badge-amber", pendiente: "badge-amber",
+  Busy: "badge-amber", Pending: "badge-amber", pendiente: "badge-amber", preparando: "badge-amber", en_camino: "badge-amber",
 };
 
 export default function Gestion() {
@@ -30,6 +30,11 @@ export default function Gestion() {
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState(null);
+
+  // Modal de editar estado de orden
+  const [showEditEstado, setShowEditEstado] = useState(false);
+  const [editEstadoItem, setEditEstadoItem] = useState(null);
+  const [nuevoEstado, setNuevoEstado] = useState("");
 
   // ESTADOS DE FORMULARIOS
   const [formDataRestaurante, setFormDataRestaurante] = useState({
@@ -50,7 +55,6 @@ export default function Gestion() {
     usuarioId: "", restauranteId: "", ordenId: "", calificacion: 5, comentario: ""
   });
 
-  // Estado para Órdenes con soporte multi-item
   const [formDataOrden, setFormDataOrden] = useState({
     usuarioId: "", restauranteId: "", items: [{ productoId: "", cantidad: 1 }]
   });
@@ -98,6 +102,13 @@ export default function Gestion() {
   };
 
   const handleEditClick = (item) => {
+    // Órdenes: solo editar estado
+    if (tab === "ordenes") {
+      setEditEstadoItem(item);
+      setNuevoEstado(item.estado || "pendiente");
+      setShowEditEstado(true);
+      return;
+    }
     setIsEditing(true);
     setCurrentId(item._id);
     if (tab === "usuarios") {
@@ -128,6 +139,17 @@ export default function Gestion() {
       });
     }
     setShowModal(true);
+  };
+
+  const handleSaveEstado = async () => {
+    try {
+      await client.put(`/ordenes/${editEstadoItem._id}`, { estado: nuevoEstado });
+      setShowEditEstado(false);
+      setEditEstadoItem(null);
+      fetchData();
+    } catch (err) {
+      alert("Error al actualizar estado: " + (err.response?.data?.error || err.message));
+    }
   };
 
   const addField = (type) => {
@@ -192,10 +214,10 @@ export default function Gestion() {
   return (
     <>
       <Header title="Gestión de Base de Datos" icon="database">
-          <button className="btn btn-primary btn-sm" onClick={handleAddNewClick}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
-            Nuevo {tab === "menu" ? "Producto" : tab === "resenas" ? "Comentario" : tab === "usuarios" ? "Usuario" : tab === "ordenes" ? "Pedido" : "Restaurante"}
-          </button>
+        <button className="btn btn-primary btn-sm" onClick={handleAddNewClick}>
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+          Nuevo {tab === "menu" ? "Producto" : tab === "resenas" ? "Comentario" : tab === "usuarios" ? "Usuario" : tab === "ordenes" ? "Pedido" : "Restaurante"}
+        </button>
       </Header>
 
       <div className="page-body">
@@ -229,13 +251,15 @@ export default function Gestion() {
               <tbody>
                 {loading ? (
                   <tr><td colSpan={4} style={{ textAlign: "center", padding: 40 }}>Consultando MongoDB Atlas...</td></tr>
+                ) : items.length === 0 ? (
+                  <tr><td colSpan={4} style={{ textAlign: "center", padding: 40, color: "var(--slate-400)" }}>Sin resultados</td></tr>
                 ) : (
                   items.map((row) => (
                     <tr key={row._id}>
                       <td className="td-mono" style={{ fontSize: '10px', color: 'var(--slate-400)' }}>{row._id}</td>
                       <td>
                         <div style={{ fontWeight: 700, color: 'var(--slate-800)' }}>
-                          {tab !== "resenas" && (row.nombre || row.name || row.username || `Orden #${row._id.slice(-4)}`)}
+                          {tab !== "resenas" && (row.nombre || row.name || row.username || `Orden #${String(row._id).slice(-4)}`)}
                         </div>
 
                         {tab === "usuarios" && (
@@ -248,27 +272,29 @@ export default function Gestion() {
                         {tab === "menu" && (
                           <div style={{ marginTop: '4px' }}>
                             <div style={{ fontSize: '12px', color: 'var(--slate-500)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>store</span>
-                                {row.restauranteInfo?.nombre || "ID: " + row.restauranteId}
+                              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>store</span>
+                              {row.restauranteInfo?.nombre || "ID: " + row.restauranteId}
                             </div>
                             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                                <span style={{ fontSize: '10px', background: 'var(--slate-100)', padding: '1px 6px', borderRadius: 4 }}>{row.categoria}</span>
-                                <span style={{ fontWeight: 700, color: 'var(--green-600)', fontSize: '12px' }}>Q{row.precio}</span>
+                              <span style={{ fontSize: '10px', background: 'var(--slate-100)', padding: '1px 6px', borderRadius: 4 }}>{row.categoria}</span>
+                              <span style={{ fontWeight: 700, color: 'var(--green-600)', fontSize: '12px' }}>Q{row.precio}</span>
                             </div>
                           </div>
                         )}
 
                         {tab === "ordenes" && (
                           <div style={{ marginTop: '4px' }}>
-                            <div style={{ fontWeight: 600, fontSize: '12px' }}>{row.usuarioInfo?.nombre || "ID: "+row.usuarioId} → {row.restauranteInfo?.nombre || "ID: "+row.restauranteId}</div>
+                            <div style={{ fontWeight: 600, fontSize: '12px' }}>
+                              {row.usuarioInfo?.nombre || "ID: " + row.usuarioId} → {row.restauranteInfo?.nombre || "ID: " + row.restauranteId}
+                            </div>
                             <div style={{ marginTop: 6, background: '#f8fafc', padding: 6, borderRadius: 4 }}>
-                                {row.items?.map((item, i) => (
-                                    <div key={i} style={{ fontSize: '10px', display: 'flex', justifyContent: 'space-between' }}>
-                                        <span>{item.cantidad}x {item.nombre}</span>
-                                        <span>Q{item.subtotal}</span>
-                                    </div>
-                                ))}
-                                <div style={{ textAlign: 'right', fontWeight: 700, color: 'var(--green-600)', fontSize: 11, marginTop: 4 }}>TOTAL: Q{row.total}</div>
+                              {row.items?.map((item, i) => (
+                                <div key={i} style={{ fontSize: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{item.cantidad}x {item.nombre}</span>
+                                  <span>Q{item.subtotal}</span>
+                                </div>
+                              ))}
+                              <div style={{ textAlign: 'right', fontWeight: 700, color: 'var(--green-600)', fontSize: 11, marginTop: 4 }}>TOTAL: Q{row.total}</div>
                             </div>
                           </div>
                         )}
@@ -288,9 +314,9 @@ export default function Gestion() {
                         {tab === "restaurantes" && (
                           <>
                             <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
-                                {row.categorias?.map((cat, i) => (
+                              {row.categorias?.map((cat, i) => (
                                 <span key={i} style={{ fontSize: '10px', background: 'var(--slate-100)', padding: '1px 6px', borderRadius: '4px' }}>{cat}</span>
-                                ))}
+                              ))}
                             </div>
                             <div style={{ fontSize: '11px', color: 'var(--slate-500)', marginTop: 6 }}>⭐ {Number(row.promedioCalificacion || 0).toFixed(1)} • {row.totalResenas || 0} reseñas</div>
                           </>
@@ -299,7 +325,9 @@ export default function Gestion() {
                       <td><span className={`badge ${STATUS_BADGE[row.status || row.estado] || "badge-slate"}`}>{row.status || row.estado || "Activo"}</span></td>
                       <td style={{ textAlign: "right" }}>
                         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                          {(tab !== "ordenes") && <button className="btn-link" onClick={() => handleEditClick(row)}>Editar</button>}
+                          <button className="btn-link" onClick={() => handleEditClick(row)}>
+                            {tab === "ordenes" ? "Estado" : "Editar"}
+                          </button>
                           <button className="btn-link" style={{ color: "var(--red-500)" }} onClick={() => setDeleteItem(row)}>Eliminar</button>
                         </div>
                       </td>
@@ -309,7 +337,7 @@ export default function Gestion() {
               </tbody>
             </table>
           </div>
-          {/* Paginación */}
+
           {!search && (
             <div className="pagination" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid var(--slate-200)' }}>
               <div style={{ fontSize: '13px' }}>Página <strong>{page}</strong> de {totalPages}</div>
@@ -492,12 +520,14 @@ export default function Gestion() {
         </div>
       )}
 
-      {/* MODAL ÓRDENES (MULTI-ITEM INTEGRADO) */}
+      {/* MODAL ÓRDENES — CREAR NUEVO PEDIDO */}
       {showModal && tab === "ordenes" && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 600, width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><span className="material-symbols-outlined">add_shopping_cart</span> Nuevo Pedido</h3>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="material-symbols-outlined">add_shopping_cart</span> Nuevo Pedido
+              </h3>
               <button className="btn-link" onClick={() => setShowModal(false)}><span className="material-symbols-outlined">close</span></button>
             </div>
             <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
@@ -511,29 +541,29 @@ export default function Gestion() {
                   <input required placeholder="ID del Restaurante" className="input-field" value={formDataOrden.restauranteId} onChange={e => setFormDataOrden({...formDataOrden, restauranteId: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--slate-200)' }} />
                 </div>
               </div>
-
               <div style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <label style={{ fontWeight: 600 }}>Artículos del Pedido</label>
+                  <label style={{ fontWeight: 600, fontSize: 13 }}>Artículos del Pedido</label>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => addField('orden')}>+ Añadir Platillo</button>
                 </div>
                 {formDataOrden.items.map((item, i) => (
                   <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-end', background: 'var(--slate-50)', padding: 8, borderRadius: 8 }}>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 10 }}>ID Producto (Menú)</label>
+                      <label style={{ fontSize: 10, color: 'var(--slate-500)' }}>ID Producto (Menú)</label>
                       <input required placeholder="ID del Platillo" value={item.productoId} onChange={(e) => { const ni = [...formDataOrden.items]; ni[i].productoId = e.target.value; setFormDataOrden({...formDataOrden, items: ni}); }} style={{ width: '100%', padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--slate-200)' }} />
                     </div>
                     <div style={{ width: 80 }}>
-                      <label style={{ fontSize: 10 }}>Cant.</label>
+                      <label style={{ fontSize: 10, color: 'var(--slate-500)' }}>Cant.</label>
                       <input required type="number" min="1" value={item.cantidad} onChange={(e) => { const ni = [...formDataOrden.items]; ni[i].cantidad = e.target.value; setFormDataOrden({...formDataOrden, items: ni}); }} style={{ width: '100%', padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--slate-200)' }} />
                     </div>
                     {formDataOrden.items.length > 1 && (
-                      <button type="button" onClick={() => removeField(i, 'orden')} style={{ color: 'var(--red-500)', background: 'none', border: 'none', padding: '6px' }}><span className="material-symbols-outlined">delete</span></button>
+                      <button type="button" onClick={() => removeField(i, 'orden')} style={{ color: 'var(--red-500)', background: 'none', border: 'none', padding: '6px' }}>
+                        <span className="material-symbols-outlined">delete</span>
+                      </button>
                     )}
                   </div>
                 ))}
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">Generar Orden</button>
@@ -543,6 +573,44 @@ export default function Gestion() {
         </div>
       )}
 
+      {/* MODAL EDITAR ESTADO DE ORDEN */}
+      {showEditEstado && editEstadoItem && (
+        <div className="modal-overlay" onClick={() => setShowEditEstado(false)}>
+          <div className="modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="material-symbols-outlined">update</span>
+                Actualizar Estado
+              </h3>
+              <button className="btn-link" onClick={() => setShowEditEstado(false)}><span className="material-symbols-outlined">close</span></button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <div style={{ background: 'var(--slate-50)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--slate-500)' }}>
+                Orden <strong>#{String(editEstadoItem._id).slice(-6)}</strong> — {editEstadoItem.usuarioInfo?.nombre || editEstadoItem.usuarioId}
+              </div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', marginBottom: 8 }}>Nuevo Estado</label>
+              <select
+                className="form-input form-select"
+                value={nuevoEstado}
+                onChange={(e) => setNuevoEstado(e.target.value)}
+                style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--slate-200)', marginBottom: 24 }}
+              >
+                <option value="pendiente">Pendiente</option>
+                <option value="confirmado">Confirmado</option>
+                <option value="preparando">Preparando</option>
+                <option value="en_camino">En camino</option>
+                <option value="entregado">Entregado</option>
+              </select>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button className="btn btn-ghost" onClick={() => setShowEditEstado(false)}>Cancelar</button>
+                <button className="btn btn-primary" onClick={handleSaveEstado}>Guardar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ELIMINAR */}
       {deleteItem && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 400 }}>
